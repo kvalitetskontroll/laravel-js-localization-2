@@ -2,6 +2,9 @@
     var locale;
     var messages = {};
 
+    var intervalRegexp = /^({\s*(\-?\d+(\.\d+)?[\s*,\s*\-?\d+(\.\d+)?]*)\s*})|([\[\]])\s*(-Inf|\*|\-?\d+(\.\d+)?)\s*,\s*(\+?Inf|\*|\-?\d+(\.\d+)?)\s*([\[\]])$/;
+    var anyIntervalRegexp = /({\s*(\-?\d+(\.\d+)?[\s*,\s*\-?\d+(\.\d+)?]*)\s*})|([\[\]])\s*(-Inf|\*|\-?\d+(\.\d+)?)\s*,\s*(\+?Inf|\*|\-?\d+(\.\d+)?)\s*([\[\]])/;
+
 
     /* Utility functions: */
 
@@ -107,6 +110,46 @@
             return typeof messages[locale][messageKey] != "undefined";
         },
 
+        _testInterval = function(count, interval) {
+            if (typeof interval !== 'string') {
+                throw 'Invalid interval: should be a string.';
+            }
+
+            interval = interval.trim();
+
+            var matches = interval.match(intervalRegexp);
+            if (!matches) {
+                throw 'Invalid interval: ' + interval;
+            }
+
+            if (matches[2]) {
+                var items = matches[2].split(',');
+                for (var i = 0; i < items.length; i++) {
+                    if (parseInt(items[i], 10) === count) {
+                        return true;
+                    }
+                }
+            } else {
+                // Remove falsy values.
+                matches = matches.filter(function(match) {
+                    return !!match;
+                });
+
+                var leftDelimiter = matches[1];
+                var leftNumber = convertNumber(matches[2]);
+                if (leftNumber === Infinity) {
+                    leftNumber = -Infinity;
+                }
+                var rightNumber = convertNumber(matches[3]);
+                var rightDelimiter = matches[4];
+
+                return (leftDelimiter === '[' ? count >= leftNumber : count > leftNumber)
+                    && (rightDelimiter === ']' ? count <= rightNumber : count < rightNumber);
+            }
+
+            return false;
+        },
+
         /**
          * Choose one of multiple message versions, based on
          * pluralization rules. Only English pluralization
@@ -129,17 +172,33 @@
             var message;
             var messageSplitted = messages[locale][messageKey].split('|');
 
-            if (count == 1) {
-                message = messageSplitted[0];
-            } else {
-                message = messageSplitted[1];
+            // Get the explicit rules, If any
+            var explicitRules = [];
+
+            for (var i = 0; i < messageParts.length; i++) {
+                messageParts[i] = messageParts[i].trim();
+
+                if (anyIntervalRegexp.test(messageParts[i])) {
+                    var messageSpaceSplit = messageParts[i].split(/\s/);
+                    explicitRules.push(messageSpaceSplit.shift());
+                    messageParts[i] = messageSpaceSplit.join(' ');
+                }
             }
 
-            if (replacements) {
-                message = applyReplacements(message, replacements);
+            // Check if there's only one message
+            if (messageParts.length === 1) {
+                // Nothing to do here
+                return message;
             }
 
-            return message;
+            // Check the explicit rules
+            for (var j = 0; j < explicitRules.length; j++) {
+                if (this._testInterval(number, explicitRules[j])) {
+                    return messageParts[j];
+                }
+            }
+
+            return messageParts[count == 1 ? 0 : 1];
         },
 
         /**
