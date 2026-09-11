@@ -46,8 +46,12 @@ class MessageCachingService extends AbstractCachingService
     {
         if ($noCache) {
             return $this->createMessagesJson();
-        } else {
-            return $this->getData();
+        }
+
+        try {
+            return $this->getData() ?? $this->createMessagesJson();
+        } catch (\Exception $e) {
+            return $this->createMessagesJson();
         }
     }
 
